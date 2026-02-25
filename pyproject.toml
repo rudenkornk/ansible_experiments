@@ -1,0 +1,12 @@
+[project]
+name = "ansible_experiments"
+version = "0.1.0"
+description = "Simple ansible setup."
+readme = "readme.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ansible-core>=2.19.6",
+    "docker>=7.1.0",
+    "molecule-plugins[vagrant]>=25.8.12",
+    "podman>=5.7.0",
+]

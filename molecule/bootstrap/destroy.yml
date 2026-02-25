@@ -1,0 +1,10 @@
+---
+- name: Destroy
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Destroy molecule instance
+      community.docker.docker_container:
+        name: docker-bootstrap-test
+        state: absent
+        force_kill: true

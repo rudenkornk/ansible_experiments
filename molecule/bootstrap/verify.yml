@@ -1,0 +1,19 @@
+---
+- name: Verify
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Gather service facts
+      ansible.builtin.service_facts:
+
+    - name: Debug SSH service facts (optional)
+      ansible.builtin.debug:
+        var: ansible_facts.services['ssh.service']
+
+    - name: Assert that the SSH service is active/running
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services['ssh.service']['state'] in ['running', 'active']
+          - ansible_facts.services['ssh.service']['status'] == 'enabled'
+        fail_msg: "The SSH service (ssh.service) is not running or not enabled."
+        success_msg: "The SSH service (ssh.service) is running and enabled."

@@ -1,0 +1,10 @@
+---
+ansible:
+  executor:
+    backend: ansible-playbook
+    args:
+      ansible_playbook:
+        - --inventory=inventory.yml
+  cfg:
+    defaults:
+      host_key_checking: false

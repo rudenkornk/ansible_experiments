@@ -1,0 +1,108 @@
+# This playbook is meant to be used as a very initial machine bootstrap.
+# It is assumed that after this playbook is ran, the user will be able use a "normal" ansible playbook.
+# with enabled gather_facts, installed python and ssh connection for the target user with admin privileges.
+
+- name: Bootstrap hosts
+  hosts: all
+  vars:
+    ansible_user: root
+    ssh_key: ~/.ssh/id_ed25519.pub
+    user: admin
+    password: $y$j9T$cKtPxxM4kCpfL.9gEQJhu/$LVXZtA6MZF7YVPnsZNoPXH/28x1nnZxNIDkVlvi2aa6 # abc
+
+  # We are setting up almost vanilla machine, which does not even have python installed
+  # Thus, we must disable gather_facts
+  gather_facts: false
+  tasks:
+    # /etc/os-release actually has well-defined structure we can rely on
+    # See https://www.linux.org/docs/man5/os-release.html
+    - name: Detect distribution
+      ansible.builtin.raw: grep -oP '^ID=\K.*' /etc/os-release | sed -e 's/\(.*\)/\L\1/' | sed 's/\([[:alpha:]]\)/\U\1/'
+      args:
+        executable: bash
+      register: distro
+      changed_when: false
+
+    - name: Set ansible_distribution fact
+      ansible.builtin.set_fact:
+        ansible_distribution: "{{ distro.stdout_lines[0] }}"
+
+    - name: Install python
+      ansible.builtin.raw: |
+        if [[ {{ ansible_distribution }} == "Ubuntu" ]]; then \
+          if ! command -v python3 &> /dev/null; then \
+            apt-get update && \
+            DEBIAN_FRONTEND=noninteractive \
+            apt-get install -y python3 && \
+            echo "bootstrapped"; \
+          fi; \
+        elif [[ {{ ansible_distribution }} == "Fedora" ]]; then \
+          if ! command -v python3 &> /dev/null; then \
+            dnf install -y python3 && \
+            echo "bootstrapped"; \
+          fi; \
+          if ! /usr/bin/python3 -c "import libdnf5" 2> /dev/null; then \
+            dnf install -y python3-libdnf5 && \
+            echo "bootstrapped"; \
+          fi; \
+        else \
+          echo "Unknown distro {{ ansible_distribution }}!" && \
+          exit 1; \
+        fi;
+      args:
+        executable: bash
+      register: bootstrap
+      changed_when: ("bootstrapped" in bootstrap.stdout)
+
+    - name: Perform apt update
+      ansible.builtin.apt:
+        update_cache: true
+      when: ansible_distribution == "Ubuntu"
+
+    - name: Install sudo
+      ansible.builtin.package:
+        name: sudo
+
+    - name: Create user with admin privileges
+      ansible.builtin.user:
+        name: "{{ user }}"
+        groups:
+          - adm
+          - "{{ {'Ubuntu': 'sudo', 'Fedora': 'wheel'}[ansible_distribution] }}"
+        append: true
+        password: "{{ password }}"
+
+    - name: Setup passwordless sudo for container connection
+      # Container connection does not support password-full privileges escalation.
+      #     See https://github.com/ansible/ansible/issues/80254
+      when: (ansible_connection in ["docker", "podman"])
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/{{ user }}-ansible-sudo
+        content: "{{ user }} ALL=(ALL) NOPASSWD:ALL"
+        mode: "0o440"
+
+    - name: Install ssh tools
+      become: true
+      ansible.builtin.package:
+        name:
+          - "{{ {'Ubuntu': 'libssl-dev', 'Fedora': 'openssl-devel'}[ansible_distribution] }}"
+          - openssh-server
+
+    - name: Enable public key authentication
+      become: true
+      ansible.builtin.lineinfile:
+        path: "/etc/ssh/sshd_config"
+        regexp: '[ #]{0,10}PubkeyAuthentication \w*\s*$'
+        line: PubkeyAuthentication yes
+
+    - name: Add authorized_key for {{ user }}
+      ansible.posix.authorized_key:
+        user: "{{ user }}"
+        key: "{{ lookup('file', ssh_key) }}"
+
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: ssh
+        state: restarted
+        enabled: true
+      changed_when: false

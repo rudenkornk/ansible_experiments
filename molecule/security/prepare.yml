@@ -1,0 +1,3 @@
+---
+- name: Run bootstrap playbook
+  ansible.builtin.import_playbook: ../../playbooks/bootstrap.yaml
